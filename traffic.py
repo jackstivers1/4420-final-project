@@ -1,5 +1,6 @@
 from collections import deque
 import heapq
+import time
 
 BOARD_SIZE = 6
 TARGET_CAR = 'X'
@@ -40,6 +41,42 @@ COLOR_MAP = {
     '.': '\033[48;5;255m  \033[0m',  # empty
     '#': '\033[48;5;240m  \033[0m',  # obstacle
     '@': '\033[48;5;16m  \033[0m',   # exit square drawn outside board
+}
+
+COLOR_NAME_MAP = {
+    'X': 'red',
+    'A': 'blue',
+    'B': 'green',
+    'C': 'yellow',
+    'D': 'orange',
+    'E': 'pink',
+    'F': 'cyan',
+    'G': 'purple',
+    'H': 'gray',
+    'I': 'white',
+    'J': 'brown',
+    'K': 'teal',
+    'L': 'light orange',
+    'M': 'hot pink',
+    'N': 'dark blue',
+    'O': 'lime',
+    'P': 'violet',
+    'Q': 'amber',
+    'R': 'sky blue',
+    'S': 'olive',
+    'T': 'lavender',
+    'U': 'dark red',
+    'V': 'dark green',
+    'W': 'gold',
+    'Y': 'light teal',
+    'Z': 'dark gray',
+}
+
+DIRECTION_MAP = {
+    'L': 'left',
+    'R': 'right',
+    'U': 'up',
+    'D': 'down'
 }
 
 
@@ -306,10 +343,9 @@ def blocking_heuristic(state, car_defs, blocked):
             blockers.add(board[x_row][c])
 
     distance_to_edge = (BOARD_SIZE - 1) - (x_col + x_length - 1)
-    obstacle_penalty = 1 if '#' in blockers else 0
     car_blockers = len([b for b in blockers if b != '#'])
 
-    return distance_to_edge + car_blockers + obstacle_penalty
+    return distance_to_edge + car_blockers
 
 
 # =========================================
@@ -422,7 +458,10 @@ def print_solution(start_state, path, final_state, expanded, car_defs, blocked):
 
     for step_num, (move, next_state) in enumerate(path, 1):
         car_id, direction, steps = move
-        print(f"Step {step_num}: move car {car_id} {direction} by {steps}")
+        color_name = COLOR_NAME_MAP.get(car_id, car_id)
+
+        direction_word = DIRECTION_MAP.get(direction, direction)
+        print(f"Step {step_num}: move {color_name} {direction_word} by {steps}")
         print_board(next_state, car_defs, blocked)
 
     print(f"Solved in {len(path)} moves.")
@@ -445,6 +484,8 @@ if __name__ == "__main__":
         print("2. Solve with A*")
         choice = input("Choose solver (1 or 2): ").strip()
 
+        start_time = time.time()
+
         if choice == "1":
             path, final_state, expanded = bfs_solve(start_state, car_defs, blocked)
             print_solution(start_state, path, final_state, expanded, car_defs, blocked)
@@ -453,3 +494,10 @@ if __name__ == "__main__":
             print_solution(start_state, path, final_state, expanded, car_defs, blocked)
         else:
             print("Invalid choice.")
+
+        end_time = time.time()
+        runtime = end_time - start_time
+
+        print(f"\nUsing {choice}")
+        print(f"Runtime: {runtime:.4f} seconds")
+        print_solution(start_state, path, final_state, expanded, car_defs, blocked)
