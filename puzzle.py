@@ -1,4 +1,10 @@
 from collections import deque
+import heapq
+import time
+
+# =========================
+# Color display
+# =========================
 
 COLOR_MAP = {
     # Bright colors
@@ -33,6 +39,15 @@ COLOR_MAP = {
     ' ': '  '
 }
 
+
+def get_block(color):
+    return COLOR_MAP.get(color, '\033[48;5;250m??\033[0m')
+
+
+# =========================
+# Conversion / state helpers
+# =========================
+
 def convert_to_2dlist(puzzle):
     main_list = []
     count = 0
@@ -55,208 +70,368 @@ def convert_to_string(list_state):
     return main_str[:-1]
 
 
-def copy_state(state):
-    return [row[:] for row in state]
+def to_state(state_str):
+    return tuple(tuple(bottle) for bottle in convert_to_2dlist(state_str))
 
 
-def get_capacity(state):
-    max_len = 0
-    for bottle in state:
-        if len(bottle) > max_len:
-            max_len = len(bottle)
-    return max_len
+def from_state(state):
+    return "-".join("".join(bottle) for bottle in state)
+
+
+def bottle_capacity(state):
+    return max(len(bottle) for bottle in state)
+
+
+def top_run_length(bottle):
+    if not bottle:
+        return 0
+    color = bottle[-1]
+    count = 1
+    i = len(bottle) - 2
+    while i >= 0 and bottle[i] == color:
+        count += 1
+        i -= 1
+    return count
 
 
 def is_uniform(bottle):
-    if len(bottle) == 0:
-        return True
-    first = bottle[0]
-    for color in bottle:
-        if color != first:
-            return False
-    return True
+    return len(bottle) == 0 or len(set(bottle)) == 1
 
 
-def is_goal(state_str):
-    state = convert_to_2dlist(state_str)
-    capacity = get_capacity(state)
+def is_solved_bottle(bottle, capacity):
+    return len(bottle) == 0 or (len(bottle) == capacity and is_uniform(bottle))
 
+
+def is_goal_state(state):
+    cap = bottle_capacity(state)
     for bottle in state:
         if len(bottle) == 0:
             continue
-        if len(bottle) != capacity:
+        if len(bottle) != cap:
             return False
         if not is_uniform(bottle):
             return False
     return True
 
 
-def can_pour(state, source_num, target_num):
-    capacity = get_capacity(state)
-    source = state[source_num]
-    target = state[target_num]
+# =========================
+# Visualization
+# =========================
 
-    if source_num == target_num:
-        return False
-    if len(source) == 0:
-        return False
-    if len(target) == capacity:
-        return False
-    if len(target) == 0:
-        return True
-    return source[-1] == target[-1]
+def print_buckets(state):
+    if isinstance(state, str):
+        state = to_state(state)
 
-
-def pour(state_str, source_num, target_num):
-    state = convert_to_2dlist(state_str)
-
-    if not can_pour(state, source_num, target_num):
-        return None
-
-    source = state[source_num]
-    target = state[target_num]
-    capacity = get_capacity(state)
-
-    new_state = copy_state(state)
-
-    source = new_state[source_num]
-    target = new_state[target_num]
-
-    moving_color = source[-1]
-
-    while (
-        len(source) > 0
-        and source[-1] == moving_color
-        and len(target) < capacity
-        and (len(target) == 0 or target[-1] == moving_color)
-    ):
-        target.append(source.pop())
-
-    return convert_to_string(new_state)
-
-
-def possible_moves(state_str):
-    state = convert_to_2dlist(state_str)
-    moves = []
-
-    for i in range(len(state)):
-        for j in range(len(state)):
-            if i == j:
-                continue
-            new_state = pour(state_str, i, j)
-            if new_state is not None:
-                moves.append((i, j, new_state))
-
-    return moves
-
-
-def build_graph(start_state, max_states=10000):
-    graph = {}
-    visited = set()
-    queue = deque([start_state])
-
-    while queue and len(visited) < max_states:
-        current = queue.popleft()
-
-        if current in visited:
-            continue
-
-        visited.add(current)
-        graph[current] = []
-
-        for source, target, next_state in possible_moves(current):
-            graph[current].append((source, target, next_state))
-            if next_state not in visited:
-                queue.append(next_state)
-
-    return graph
-
-
-def reconstruct_path(parent, move_used, goal_state):
-    path = []
-    current = goal_state
-
-    while parent[current] is not None:
-        path.append((move_used[current], current))
-        current = parent[current]
-
-    path.reverse()
-    return path
-
-
-def bfs_solve(start_state):
-    if is_goal(start_state):
-        return []
-
-    visited = set([start_state])
-    parent = {start_state: None}
-    move_used = {start_state: None}
-    queue = deque([start_state])
-
-    while queue:
-        current = queue.popleft()
-
-        for source, target, next_state in possible_moves(current):
-            if next_state in visited:
-                continue
-
-            visited.add(next_state)
-            parent[next_state] = current
-            move_used[next_state] = (source, target)
-            queue.append(next_state)
-
-            if is_goal(next_state):
-                return reconstruct_path(parent, move_used, next_state)
-
-    return None
-
-
-def print_solution(start_state, solution):
-    print("Start:")
-    print_buckets(start_state)
-
-    if solution is None:
-        print("No solution found.")
-        return
-
-    current = start_state
-
-    for step, (move, next_state) in enumerate(solution, 1):
-        s, t = move
-        print(f"Step {step}: {s} → {t}")
-        print_buckets(next_state)
-        current = next_state
-
-def print_buckets(state_str):
-    state = convert_to_2dlist(state_str)
-    capacity = get_capacity(state)
+    cap = bottle_capacity(state)
 
     print()
-
-    for level in range(capacity - 1, -1, -1):
+    for level in range(cap - 1, -1, -1):
         for bottle in state:
             if level < len(bottle):
-                block = COLOR_MAP.get(bottle[level], "??")
+                block = get_block(bottle[level])
                 print(f"|{block}|", end=" ")
             else:
                 print("|  |", end=" ")
         print()
 
     print("---- " * len(state))
-    print()
+    for i in range(len(state)):
+        print(f" {i:<2} ", end=" ")
+    print("\n")
+
+
+# =========================
+# Canonicalization
+# =========================
+
+def bottle_sort_key(bottle):
+    return (len(bottle), bottle)
+
+
+def canonicalize(state):
+    return tuple(sorted(state, key=bottle_sort_key))
+
+
+# =========================
+# Move generation / pruning
+# =========================
+
+def legal_moves(state):
+    cap = bottle_capacity(state)
+    n = len(state)
+    moves = []
+
+    for i in range(n):
+        source = state[i]
+        if len(source) == 0:
+            continue
+
+        empty_target_seen = False
+
+        # Do not pour out of an already solved full bottle
+        if len(source) == cap and is_uniform(source):
+            continue
+
+        source_top = source[-1]
+        source_run = top_run_length(source)
+
+        for j in range(n):
+            if i == j:
+                continue
+
+            target = state[j]
+
+            if len(target) == cap:
+                continue
+
+            if len(target) == 0:
+                if empty_target_seen:
+                    continue
+            else:
+                if target[-1] != source_top:
+                    continue
+
+            # avoid pointless move: uniform source into empty
+            if len(target) == 0 and is_uniform(source):
+                continue
+
+            amount = min(source_run, cap - len(target))
+            if amount <= 0:
+                continue
+
+            if len(target) == 0:
+                empty_target_seen = True
+
+            moves.append((i, j, amount))
+
+    return moves
+
+
+def apply_move(state, source_index, target_index, amount):
+    bottles = [list(bottle) for bottle in state]
+
+    moved = bottles[source_index][-amount:]
+    bottles[source_index] = bottles[source_index][:-amount]
+    bottles[target_index].extend(moved)
+
+    return tuple(tuple(bottle) for bottle in bottles)
+
+
+# =========================
+# Heuristic
+# =========================
+
+def bottle_transitions(bottle):
+    count = 0
+    for i in range(len(bottle) - 1):
+        if bottle[i] != bottle[i + 1]:
+            count += 1
+    return count
+
+
+def color_group_penalty(state):
+    total = 0
+    for bottle in state:
+        if len(bottle) == 0:
+            continue
+        seen_groups = 1
+        for i in range(1, len(bottle)):
+            if bottle[i] != bottle[i - 1]:
+                seen_groups += 1
+        total += seen_groups - 1
+    return total
+
+
+def unfinished_bottle_count(state):
+    cap = bottle_capacity(state)
+    count = 0
+    for bottle in state:
+        if len(bottle) > 0 and not (len(bottle) == cap and is_uniform(bottle)):
+            count += 1
+    return count
+
+
+def heuristic(state):
+    transitions = sum(bottle_transitions(bottle) for bottle in state)
+    return transitions
+
+
+# =========================
+# Path reconstruction
+# =========================
+
+def reconstruct_path(parent, end_state):
+    path = []
+    current = end_state
+
+    while parent[current][0] is not None:
+        prev_state, move = parent[current]
+        path.append((move, current))
+        current = prev_state
+
+    path.reverse()
+    return path
+
+def bfs_solve(start_str):
+    start_state = to_state(start_str)
+
+    if is_goal_state(start_state):
+        return [], start_state, 0
+
+    visited = {start_state}
+    parent = {start_state: (None, None)}
+    queue = deque([start_state])
+    expanded = 0
+
+    while queue:
+        state = queue.popleft()
+        expanded += 1
+
+        for move in legal_moves(state):
+            next_state = apply_move(state, *move)
+
+            if next_state in visited:
+                continue
+
+            visited.add(next_state)
+            parent[next_state] = (state, move)
+
+            if is_goal_state(next_state):
+                return reconstruct_path(parent, next_state), next_state, expanded
+
+            queue.append(next_state)
+
+    return None, None, expanded
+
+# =========================
+# A* Search
+# =========================
+
+def astar_solve(start_str):
+    start_state = to_state(start_str)
+    start_key = canonicalize(start_state)
+
+    pq = []
+    start_h = heuristic(start_state)
+    heapq.heappush(pq, (start_h, 0, start_state))
+
+    g_score = {start_key: 0}
+    parent = {start_state: (None, None)}
+
+    expanded = 0
+
+    while pq:
+        f_score, current_g, state = heapq.heappop(pq)
+        state_key = canonicalize(state)
+
+        if current_g != g_score.get(state_key, float('inf')):
+            continue
+
+        expanded += 1
+
+        if is_goal_state(state):
+            return reconstruct_path(parent, state), state, expanded
+
+        for move in legal_moves(state):
+            source_index, target_index, amount = move
+            next_state = apply_move(state, source_index, target_index, amount)
+            next_key = canonicalize(next_state)
+
+            new_g = current_g + 1
+
+            if new_g < g_score.get(next_key, float('inf')):
+                g_score[next_key] = new_g
+                parent[next_state] = (state, move)
+                new_f = new_g + heuristic(next_state)
+                heapq.heappush(pq, (new_f, new_g, next_state))
+
+    return None, None, expanded
+
+# =========================
+# Output
+# =========================
+
+def print_solution(start_str, path, final_state, expanded):
+    start_state = to_state(start_str)
+
+    print("\nInitial state:")
+    print_buckets(start_state)
+
+    print(f"States expanded: {expanded}")
+
+    if path is None:
+        print("No solution found.")
+        return
+
+    if len(path) == 0:
+        print("Already solved.")
+        return
+
+    for step, (move, next_state) in enumerate(path, 1):
+        source_index, target_index, amount = move
+        print(f"Step {step}: pour bottle {source_index} into bottle {target_index}")
+        print_buckets(next_state)
+
+    print("Solved in", len(path), "moves.")
+
+# =========================
+# Basic validation
+# =========================
+
+def validate_input(puzzle):
+    if not puzzle:
+        return False, "Puzzle string is empty."
+
+    bottles = puzzle.split("-")
+    if len(bottles) < 3:
+        return False, "Need at least 3 bottles."
+
+    lengths = [len(b) for b in bottles]
+    cap = max(lengths)
+
+    if cap == 0:
+        return False, "All bottles are empty."
+
+    for bottle in bottles:
+        if len(bottle) > cap:
+            return False, "Invalid bottle length."
+
+    return True, ""
+
+
+# =========================
+# Main
+# =========================
 
 if __name__ == "__main__":
-    start = input('Enter puzzle in format like "RBB-RBB--": ').strip()
+    puzzle = input('Enter puzzle in format like "RBB-RBB--": ').strip()
 
-    if not start:
-        print("Error: empty puzzle string.")
+    valid, message = validate_input(puzzle)
+    if not valid:
+        print("Error:", message)
     else:
-        print("\nYou entered:")
-        print(start)
+        print("1. Solve with BFS")
+        print("2. Solve with A*")
+        choice = input("Choose solver (1 or 2): ").strip()
 
-        print("\nInitial state:")
-        print_buckets(start)
+        start_time = time.time()
 
-        print("Solving...")
-        solution = bfs_solve(start)
-        print_solution(start, solution)
+        if choice == "1":
+            path, final_state, expanded = bfs_solve(puzzle)
+            print("\nUsing BFS")
+            print_solution(puzzle, path, final_state, expanded)
+        elif choice == "2":
+            path, final_state, expanded = astar_solve(puzzle)
+            print("\nUsing A*")
+            print_solution(puzzle, path, final_state, expanded)
+        else:
+            print("Invalid choice.")
+
+        end_time = time.time()
+        runtime = end_time - start_time
+
+        if choice == "1":
+            print(f"\nUsing BFS")
+        if choice == "2":
+            print(f"\nUsing A*")
+        print(f"Runtime: {runtime:.4f} seconds")
